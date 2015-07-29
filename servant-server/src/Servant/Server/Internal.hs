@@ -129,6 +129,13 @@ methodRouter :: (AllCTRender ctypes a)
 methodRouter method proxy status action = LeafRouter route'
   where
     route' request respond
+      | pathIsEmpty request && method == methodGet && requestMethod request == methodHead = do
+          runAction action respond $ \ output -> do
+            let accH = fromMaybe ct_wildcard $ lookup hAccept $ requestHeaders request
+            case handleAcceptH proxy (AcceptHeader accH) output of
+              Nothing -> failWith UnsupportedMediaType
+              Just (contentT, _) -> succeedWith $
+                responseLBS status [ ("Content-Type" , cs contentT)] ""
       | pathIsEmpty request && requestMethod request == method = do
           runAction action respond $ \ output -> do
             let accH = fromMaybe ct_wildcard $ lookup hAccept $ requestHeaders request
@@ -147,6 +154,14 @@ methodRouterHeaders :: (GetHeaders (Headers h v), AllCTRender ctypes v)
 methodRouterHeaders method proxy status action = LeafRouter route'
   where
     route' request respond
+      | pathIsEmpty request && method == methodGet && requestMethod request == methodHead = do
+        runAction action respond $ \ output -> do
+          let accH = fromMaybe ct_wildcard $ lookup hAccept $ requestHeaders request
+              headers = getHeaders output
+          case handleAcceptH proxy (AcceptHeader accH) (getResponse output) of
+            Nothing -> failWith UnsupportedMediaType
+            Just (contentT, _) -> succeedWith $
+              responseLBS status ( ("Content-Type" , cs contentT) : headers) ""
       | pathIsEmpty request && requestMethod request == method = do
         runAction action respond $ \ output -> do
           let accH = fromMaybe ct_wildcard $ lookup hAccept $ requestHeaders request
@@ -165,6 +180,9 @@ methodRouterEmpty :: Method
 methodRouterEmpty method action = LeafRouter route'
   where
     route' request respond
+      | pathIsEmpty request && method == methodGet && requestMethod request == methodHead = do
+          runAction action respond $ \ () ->
+            succeedWith $ responseLBS noContent204 [] ""
       | pathIsEmpty request && requestMethod request == method = do
           runAction action respond $ \ () ->
             succeedWith $ responseLBS noContent204 [] ""
