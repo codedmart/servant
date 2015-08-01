@@ -127,10 +127,7 @@ allowedMethodHead :: Method -> Request -> Bool
 allowedMethodHead method request = method == methodGet && requestMethod request == methodHead
 
 allowedMethod :: Method -> Request -> Bool
-allowedMethod method request
-  | allowedMethodHead method request = True
-  | requestMethod request == method = True
-  | otherwise = False
+allowedMethod method request = allowedMethodHead method request || requestMethod request == method
 
 processMethodRouter :: forall a. ConvertibleStrings a B.ByteString
                     => Maybe (a, BL.ByteString) -> Status -> Method
@@ -138,15 +135,12 @@ processMethodRouter :: forall a. ConvertibleStrings a B.ByteString
                     -> Request -> RouteResult Response
 processMethodRouter handleA status method headers request = case handleA of
   Nothing -> failWith UnsupportedMediaType
-  Just (contentT, body) -> succeedWith $
-    responseLBS status hdrs bdy
+  Just (contentT, body) -> succeedWith $ responseLBS status hdrs bdy
     where
       bdy = case allowedMethodHead method request of
         True -> ""
         False -> body
-      hdrs = case headers of
-        Nothing -> [(hContentType, cs contentT)]
-        Just h -> (hContentType, cs contentT) : h
+      hdrs = (hContentType, cs contentT) : (fromMaybe [] headers)
 
 methodRouter :: (AllCTRender ctypes a)
              => Method -> Proxy ctypes -> Status
@@ -180,7 +174,6 @@ methodRouterHeaders method proxy status action = LeafRouter route'
       | pathIsEmpty request && requestMethod request /= method =
           respond $ failWith WrongMethod
       | otherwise = respond $ failWith NotFound
-      where
 
 methodRouterEmpty :: Method
                   -> IO (RouteResult (EitherT ServantErr IO ()))
@@ -635,7 +628,6 @@ instance (KnownSymbol sym, FromText a, HasServer sublayout)
                   values = catMaybes $ map (convert . snd) parameters
               route (Proxy :: Proxy sublayout) (feedTo subserver values)
       _ -> route (Proxy :: Proxy sublayout) (feedTo subserver [])
-
     where paramname = cs $ symbolVal (Proxy :: Proxy sym)
           looksLikeParam (name, _) = name == paramname || name == (paramname <> "[]")
           convert Nothing = Nothing
@@ -667,11 +659,8 @@ instance (KnownSymbol sym, HasServer sublayout)
                     Just Nothing  -> True  -- param is there, with no value
                     Just (Just v) -> examine v -- param with a value
                     Nothing       -> False -- param not in the query string
-
               route (Proxy :: Proxy sublayout) (feedTo subserver param)
-
       _ -> route (Proxy :: Proxy sublayout) (feedTo subserver False)
-
     where paramname = cs $ symbolVal (Proxy :: Proxy sym)
           examine v | v == "true" || v == "1" || v == "" = True
                     | otherwise = False
